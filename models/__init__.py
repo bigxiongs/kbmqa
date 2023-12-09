@@ -1,1 +1,1 @@
-from models.models import UserBase, UserCreate, User
+from models.models import *
