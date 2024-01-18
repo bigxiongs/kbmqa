@@ -2,18 +2,20 @@ import unittest
 from datetime import date, datetime
 
 from ogm import *
+import database.tuples as models
 
 
 class TestOGM(unittest.TestCase):
-    user = {
-        "type": "Node",
+    user_create = models.User(**{
         "username": "user",
         "password": "",
         "telephone": "",
         "email": "",
         "profile": "",
         "create_time": date(2000, 1, 1),
-    }
+    })
+
+    user_get = models.UserBase(username="user")
 
     dialogue = {
         "type": "Node",
@@ -30,43 +32,42 @@ class TestOGM(unittest.TestCase):
     }
 
     def test_user(self):
-        self.assertFalse(any(User.get(self.user)))
+        user = User(self.user_get)
+        self.assertIsNone(user.info)
 
-        user = User.create(self.user)
-        self.assertEqual(next(user)[0], self.user)
-        self.assertFalse(any(user))
+        user = User(self.user_create)
+        self.assertEqual(user.info, self.user_create)
 
-        user = User.get(self.user)
-        self.assertEqual(next(user)[0], self.user)
-        self.assertFalse(any(user))
+        user = User(self.user_get)
+        self.assertEqual(user.info, self.user_create)
 
-        self.assertFalse(any(User.detach(self.user)))
-        self.assertFalse(any(User.get(self.user)))
+        user = user.detach()
+        self.assertIsNone(user.info)
 
     def test_dialogue(self):
-        self.assertFalse(any(User.get(self.user)))
+        self.assertFalse(any(User._get(self.user_create)))
 
-        user = User.create(self.user)
-        self.assertEqual(next(user)[0], self.user)
+        user = User._create(self.user_create)
+        self.assertEqual(next(user)[0], self.user_create)
         self.assertFalse(any(user))
 
         dialogue = Dialogue.create(self.dialogue)
         self.assertEqual(next(dialogue)[0], self.dialogue)
         self.assertFalse(any(dialogue))
 
-        dialogue = Dialogue.get(self.user)
+        dialogue = Dialogue.get(self.user_create)
         self.assertEqual(next(dialogue)[0], self.dialogue)
         self.assertFalse(any(dialogue))
 
         self.assertFalse(any(Dialogue.detach(self.dialogue)))
-        self.assertFalse(any(Dialogue.get(self.user)))
+        self.assertFalse(any(Dialogue.get(self.user_create)))
 
-        self.assertFalse(any(User.detach(self.user)))
-        self.assertFalse(any(User.get(self.user)))
+        self.assertFalse(any(User._detach(self.user_create)))
+        self.assertFalse(any(User._get(self.user_create)))
 
     def test_query(self):
-        self.assertFalse(any(User.get(self.user)))
-        User.create(self.user)
+        self.assertFalse(any(User._get(self.user_create)))
+        User._create(self.user_create)
         Dialogue.create(self.dialogue)
 
         temp = {**self.dialogue, **self.query}
@@ -82,7 +83,7 @@ class TestOGM(unittest.TestCase):
         self.assertFalse(any(Query.get(self.dialogue)))
 
         self.assertFalse(any(Dialogue.detach(self.dialogue)))
-        self.assertFalse(any(User.detach(self.user)))
+        self.assertFalse(any(User._detach(self.user_create)))
 
 
 if __name__ == '__main__':

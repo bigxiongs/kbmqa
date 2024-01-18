@@ -1,15 +1,13 @@
 from collections.abc import Generator
-from typing import Callable
+from typing import Callable, Any
 
-from neo4j.time import Date, DateTime
 from neo4j import GraphDatabase, Record
-from neo4j.graph import Node, Relationship
 
 URI = "neo4j://localhost"
 AUTH = ("rene", "00000000")
 WRITE_KEYWORDS = ["DELETE", "CREATE", "SET"]
 
-Executor = Callable[[dict], Generator[tuple]]
+Executor = Callable[[dict], list[Record]]
 
 
 # session generator
@@ -23,18 +21,18 @@ session_generator = _session_generator()
 
 
 # executor
-def execute(statement: str, converter=lambda _: _) -> Executor:
+def execute(statement: str, converter: Callable[[Any], Any] = lambda _: _) -> Executor:
     def work_func(stmt: str):
         return lambda tx, parameters: list(tx.run(stmt, **parameters))
 
-    def _execute(_statement: str, _converter: Callable[[list[Record]], Generator[tuple]], parameters: dict):
+    def _execute(_statement: str, _params: dict):
         with next(session_generator) as session:
-            if any(word in _statement for word in WRITE_KEYWORDS):
-                return _converter(session.execute_write(work_func(_statement), parameters))
-            else:
-                return _converter(session.execute_read(work_func(_statement), parameters))
+            records = session.execute_write(work_func(_statement), _params) \
+                if any(word in _statement for word in WRITE_KEYWORDS) \
+                else session.execute_read(work_func(_statement), _params)
+            return converter(records)
 
-    return lambda parameters: _execute(statement, converter, parameters)
+    return lambda parameters: _execute(statement, parameters)
 
 # converter
 # def field_process(record: dict) -> dict:

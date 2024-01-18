@@ -60,4 +60,3 @@ class Dialogue(BaseModel):
     title: str = ""
     creator: str
     history: list[QueryBase]
-

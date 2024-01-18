@@ -22,7 +22,7 @@ def create_node(graph, label, attrs):
     # 如果要创建的节点不存在则创建
     if value is None:
         node = Node(*label, **attrs)
-        n = graph.create(node)
+        n = graph._create(node)
         return n
     return None
 
@@ -38,7 +38,7 @@ def create_relationship(graph, label1, attrs1, label2, attrs2, r_name):
     if value1 is None or value2 is None:
         return False
     r = Relationship(value1, r_name, value2)
-    graph.create(r)
+    graph._create(r)
 
 
 # 查询节点
