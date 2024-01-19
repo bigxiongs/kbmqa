@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-import database.tuples as models
+from ogm import *
 
 user_create = models.User(**{
         "username": "user",
@@ -25,6 +25,6 @@ query = {
     "answer": "",
     "create_time": datetime(2000, 1, 1, 0, 0, 0, 0), }
 
-d = models.UserBase(username="user")
-d = d._asdict()
-print(d)
+records = Graph._get_knowledge_node(models.GraphBase("rene", 1)._asdict())
+knowledge_nodes = [r["k"] for r in records]
+knowledge_nodes = [models.KNode(**k) for k in knowledge_nodes]
