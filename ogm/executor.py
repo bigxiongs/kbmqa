@@ -46,7 +46,7 @@ class User:
             assert False
 
     @property
-    def info(self) -> models.User | None:
+    def model(self) -> models.User | None:
         return None if self._instance is None else models.User(
             username=self.username,
             password=self.password,
@@ -63,7 +63,7 @@ class User:
     @username.setter
     def username(self, new_name: str):
         assert not User._get(models.UserBase(new_name)._asdict())
-        records = User._set_name({"username": self._info.username, "new_name": new_name})
+        records = User._set_name({"username": self.username, "new_name": new_name})
         self._info = records
 
     @property
@@ -94,6 +94,7 @@ class User:
         dialogue_nodes = [r["d"] for r in records]
         dialogue_nodes = [models.Dialogue(d["creator"], d["did"], d["title"]) for d in dialogue_nodes]
         self._dialogues = [Dialogue(d) for d in dialogue_nodes]
+        return self.dialogues
 
     def open_dialogue(self, title: str):
         dialogue = models.Dialogue(self.username, len(self.dialogues), title)
@@ -105,10 +106,12 @@ class User:
         assert len(dialogues) == 1
         dialogue = dialogues[0]
         dialogue.detach()
+        self._dialogues = None
 
     def detach_dialogues(self):
         for d in self.dialogues:
             d.detach()
+        self._dialogues = []
 
     @property
     def graphs(self):
@@ -139,10 +142,10 @@ class User:
     def __eq__(self, __o):
         if __o is not User:
             return False
-        return self.info == __o.info
+        return self.model == __o.model
 
     def __hash__(self):
-        return hash(self.info)
+        return hash(self.model)
 
 
 class Dialogue:
@@ -155,25 +158,53 @@ class Dialogue:
         "MATCH (d:Dialogue {creator: $creator, did: $did})-->(q:Query) return q")
     """parameters: creator, did"""
 
+    _set_title = execute("MATCH (d:Dialogue {creator: $creator, did: $did}) SET d.title = $title RETURN d")
+
+    _create_query = execute(
+        "MATCH (d:Dialogue {creator: $creator, did: $did}) "
+        "CREATE (d)-[:CONTAIN]->(q:Query {question: $question, answer: $answer, create_time: $create_time})")
+
     _detach_queries: Executor = execute("MATCH (d:Dialogue {creator: $creator, did: $did})-->(q:Query) DETACH DELETE q")
     _detach: Executor = execute("MATCH (d:Dialogue {creator: $creator, did: $did}) DETACH DELETE d")
 
-    def __init__(self, dialogue: models.Dialogue | None):
+    def __init__(self, dialogue: models.Dialogue):
         self._instance = None
         self._history = None
         if dialogue is not None:
-            self.creator = dialogue.creator
-            self.did = dialogue.did
-            self.title = dialogue.title
+            self._creator = dialogue.creator
+            self._did = dialogue.did
+            self._title = dialogue.title
 
     @property
-    def history(self):
+    def model(self):
+        return models.Dialogue(self.creator, self.did, self.title)
+
+    @property
+    def creator(self):
+        return self._creator
+
+    @property
+    def did(self):
+        return self._did
+
+    @property
+    def title(self):
+        return self._title
+
+    @title.setter
+    def title(self, new_title):
+        Dialogue._set_title(models.Dialogue(self.creator, self.did, new_title)._asdict())
+        self._title = new_title
+
+    @property
+    def history(self) -> list['Query']:
         if self._history is not None:
             return self._history
         records = Dialogue._get_history(models.DialogueBase(self.creator, self.did)._asdict())
         queries = [r["q"] for r in records]
         queries = [models.Query(q["question"], q["answer"], q["create_time"]) for q in queries]
         self._history = [Query(q) for q in queries]
+        return self.history
 
     def detach(self):
         Dialogue._detach_queries(models.DialogueBase(self.creator, self.did)._asdict())
@@ -185,15 +216,27 @@ class Dialogue:
         dialogue = records[0]["d"]
         return Dialogue(models.Dialogue(dialogue["creator"], dialogue["did"], dialogue["title"]))
 
+    def continue_dialogue(self, query: models.Query):
+        Dialogue._create_query(self.model._asdict() | query._asdict())
+        self._history = None
+
+    def __eq__(self, __o):
+        if __o is not Dialogue:
+            return False
+        return self.model == __o.model
+
+    def __hash__(self):
+        return hash(self.model)
+
 
 class Query:
-    create: Executor = execute(
+    _create: Executor = execute(
         "MATCH (d:Dialogue {did: $did, creator: $creator}) "
         "CREATE (d)-[:CONTAIN]->(q:Query {question: $question, answer: $answer, create_time: $create_time})"
         "RETURN q")
     """parameters: did, creator, question, answer, create_time"""
 
-    get: Executor = execute("MATCH (d:Dialogue {did: $did})-->(q:Query) RETURN q")
+    _get: Executor = execute("MATCH (d:Dialogue {did: $did})-->(q:Query) RETURN q")
     """parameters: did"""
 
     _detach: Executor = execute("MATCH (:Dialogue {did: $did})-->(q:Query) DETACH DELETE q")
@@ -205,6 +248,18 @@ class Query:
             self.question = query.question
             self.answer = query.answer
             self.create_time = query.create_time
+
+    @property
+    def model(self):
+        return models.Query(self.question, self.answer, self.create_time)
+
+    def __eq__(self, __o):
+        if __o is not Query:
+            return False
+        return self.model == __o.model
+
+    def __hash__(self):
+        return hash(self.model)
 
 
 class Graph:

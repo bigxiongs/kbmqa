@@ -6,84 +6,69 @@ import database.tuples as models
 
 
 class TestOGM(unittest.TestCase):
-    user_create = models.User(**{
-        "username": "user",
-        "password": "",
-        "telephone": "",
-        "email": "",
-        "profile": "",
-        "create_time": date(2000, 1, 1),
-    })
+    user_create = models.User("user", "", "", "", "", date(2000, 1, 1))
+    user_base = models.UserBase("user")
+    user_new_name = models.UserBase("new_user")
+    user_new_name_create = models.User("new_user", "", "", "", "", date(2000, 1, 1))
 
-    user_get = models.UserBase(username="user")
+    test_dialogue = models.Dialogue("user", 0, "test dialogue")
 
-    dialogue = {
-        "type": "Node",
-        "creator": "user",
-        "did": "1",
-        "title": "",
-    }
+    query_create = models.Query("q", "a", datetime(2000, 1, 1, 0, 0, 0, 0))
 
-    query = {
-        "type": "Node",
-        "question": "",
-        "answer": "",
-        "create_time": datetime(2000, 1, 1, 0, 0, 0, 0),
-    }
-
-    def test_user(self):
-        user = User(self.user_get)
-        self.assertIsNone(user.info)
+    def test_user_create(self):
+        user = User(self.user_base)
+        self.assertIsNone(user.model)
 
         user = User(self.user_create)
-        self.assertEqual(user.info, self.user_create)
+        self.assertEqual(user.model, self.user_create)
 
-        user = User(self.user_get)
-        self.assertEqual(user.info, self.user_create)
+        user = User(self.user_base)
+        self.assertEqual(user.model, self.user_create)
 
         user = user.detach()
-        self.assertIsNone(user.info)
+        self.assertIsNone(user.model)
 
-    def test_dialogue(self):
-        self.assertFalse(any(User._get(self.user_create)))
+    def test_user_set_username(self):
+        user = User(self.user_create)
+        self.assertEqual(user.model, self.user_create)
 
-        user = User._create(self.user_create)
-        self.assertEqual(next(user)[0], self.user_create)
-        self.assertFalse(any(user))
+        user.username = self.user_new_name.username
+        self.assertEqual(user.model, self.user_new_name_create)
 
-        dialogue = Dialogue.create(self.dialogue)
-        self.assertEqual(next(dialogue)[0], self.dialogue)
-        self.assertFalse(any(dialogue))
+        user.username = self.user_base.username
 
-        dialogue = Dialogue.get(self.user_create)
-        self.assertEqual(next(dialogue)[0], self.dialogue)
-        self.assertFalse(any(dialogue))
+        user = user.detach()
+        self.assertIsNone(user.model)
 
-        self.assertFalse(any(Dialogue.detach(self.dialogue)))
-        self.assertFalse(any(Dialogue.get(self.user_create)))
+    def test_dialogue_create(self):
+        user = User(self.user_create)
+        self.assertEqual(user.model, self.user_create)
 
-        self.assertFalse(any(User._detach(self.user_create)))
-        self.assertFalse(any(User._get(self.user_create)))
+        user.open_dialogue("test dialogue")
+        for a, b in zip([d.model for d in user.dialogues], [self.test_dialogue]):
+            self.assertEqual(a, b)
 
-    def test_query(self):
-        self.assertFalse(any(User._get(self.user_create)))
-        User._create(self.user_create)
-        Dialogue.create(self.dialogue)
+        user.detach_dialogues()
+        self.assertEqual(len(user.dialogues), 0)
 
-        temp = {**self.dialogue, **self.query}
-        query = Query.create(temp)
-        self.assertEqual(next(query)[0], self.query)
-        self.assertFalse(any(query))
+        user = user.detach()
+        self.assertIsNone(user.model)
 
-        query = Query.get(self.dialogue)
-        self.assertEqual(next(query)[0], self.query)
-        self.assertFalse(any(query))
+    def test_query_create(self):
+        user = User(self.user_create)
+        self.assertEqual(user.model, self.user_create)
 
-        self.assertFalse(any(Query.detach(self.dialogue)))
-        self.assertFalse(any(Query.get(self.dialogue)))
+        user.open_dialogue("test dialogue")
+        dialogue = user.dialogues[0]
+        dialogue.continue_dialogue(self.query_create)
+        for a, b in zip([q.model for q in dialogue.history], [self.query_create]):
+            self.assertEqual(a, b)
 
-        self.assertFalse(any(Dialogue.detach(self.dialogue)))
-        self.assertFalse(any(User._detach(self.user_create)))
+        user.detach_dialogues()
+        self.assertEqual(len(user.dialogues), 0)
+
+        user = user.detach()
+        self.assertIsNone(user.model)
 
 
 if __name__ == '__main__':
