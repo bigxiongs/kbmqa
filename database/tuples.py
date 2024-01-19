@@ -10,5 +10,5 @@ DialogueBase = namedtuple("DialogueBase", ["creator", "did"])
 Graph = namedtuple("Graph", ["creator", "gid", "title", "create_time", "edit_time"])
 GraphBase = namedtuple("GraphBase", ["creator", "gid"])
 
-KNode = namedtuple("KnowledgeNode", ["label", "properties"])
-KRelationship = namedtuple("KnowledgeRelationship", ["label", "properties"])
+KNode = namedtuple("KnowledgeNode", ["labels", "properties"])
+KRelationship = namedtuple("KnowledgeRelationship", ["type", "properties", "start_node", "end_node"])

@@ -1,3 +1,6 @@
+import copy
+from datetime import datetime
+
 import database.tuples as models
 from database.session import execute, Executor
 
@@ -122,6 +125,12 @@ class User:
         graph_nodes = [models.Graph(g["creator"], g["gid"], g["title"], g["create_time"], g["edit_time"]) for g in
                        graph_nodes]
         self._graphs = [Graph(g) for g in graph_nodes]
+        return self.graphs
+
+    def draw_graph(self, title: str, create_time: datetime, edit_time: datetime):
+        graph = models.Graph(self.username, len(self.graphs), title, create_time, edit_time)
+        graph = Graph.draw_graph(graph)
+        self._graphs.append(graph)
 
     def detach_graph(self, gid: int):
         graphs = [g for g in self.graphs if g.gid == gid]
@@ -132,9 +141,12 @@ class User:
     def detach_graphs(self):
         for graph in self.graphs:
             graph.detach()
+        self._graphs = []
 
     def detach(self):
         if self._info is not None:
+            self.detach_dialogues()
+            self.detach_graphs()
             User._detach(models.UserBase(self.username)._asdict())
             return User(models.UserBase(self.username))
         assert False
@@ -263,19 +275,20 @@ class Query:
 
 
 class Graph:
-    create: Executor = execute(
+    _create: Executor = execute(
         "MATCH (u:User {username: $creator}) CREATE (u)-[:CREATE]->(g:Graph {gid: $gid, title: $title, "
-        "creator: $creator, create_time: $create_time}) return g")
-    """parameters: creator, gid, title, create_time"""
+        "creator: $creator, create_time: $create_time, edit_time: $edit_time}) return g")
+    """parameters: creator, gid, title, create_time, edit_time"""
 
-    get: Executor = execute("MATCH (:User {username: $username})-->(g:Graph) RETURN g")
-    """parameters: username"""
+    _create_knowledge_node = "MATCH (g:Graph {creator: $creator, gid: $gid}) CREATE (g)-[:CONTAIN]->(k:? {?})"
+    _create_knowledge_relationship = ("MATCH (g:Graph {creator: $creator, gid: $gid})-->(k1 {kid: $start_node}) "
+                                      "MATCH (g)-->(k2 {kid: $end_node}) CREATE (k1)-[:??]->(k2)")
 
-    _detach_knowledge: Executor = execute("MATCH (g:Graph {creator: $creator, gid: $gid})-->(k:KNode) DETACH DELETE k")
-    _detach: Executor = execute("MATCH (g:Graph {creator: $creator, gid: $gid}) DETACH DELETE g")
+    _detach_knowledge = execute("MATCH (g:Graph {creator: $creator, gid: $gid})-[:CONTAIN]->(k) DETACH DELETE k")
+    _detach = execute("MATCH (g:Graph {creator: $creator, gid: $gid}) DETACH DELETE g")
 
-    _get_knowledge_node: Executor = execute("MATCH (g:Graph {creator: $creator, gid: $gid})-->(k:KNode) return k")
-    _get_knowledge_relationship: Executor = execute(
+    _get_knowledge_node = execute("MATCH (g:Graph {creator: $creator, gid: $gid})-->(k:KNode) return k")
+    _get_knowledge_relationship = execute(
         "MATCH (g:Graph {creator: $creator, gid: $gid})-->(:KNode)-[r]->(:KNode) return r")
 
     def __init__(self, graph: models.Graph | None):
@@ -290,21 +303,68 @@ class Graph:
             self.edit_time = graph.edit_time
 
     @property
+    def model(self):
+        return models.Graph(self.creator, self.gid, self.title, self.create_time, self.edit_time)
+
+    @property
+    def model_base(self):
+        return models.GraphBase(self.creator, self.gid)
+
+    @property
     def knowledge(self):
-        if self._knowledge_nodes is not None and self._knowledge_relationships is not None:
-            return self._knowledge_nodes.union(self._knowledge_relationships)
+        return self.knowledge_nodes + self.knowledge_relationships
+
+    @property
+    def knowledge_nodes(self) -> list[models.KNode]:
+        if self._knowledge_nodes is not None:
+            return self._knowledge_nodes
         records = Graph._get_knowledge_node(models.GraphBase(self.creator, self.gid)._asdict())
-        k_nodes = {r["k"] for r in records}
-        k_nodes = {models.KNode(node["label"], {k: v for k, v in node if k != "label"}) for node in k_nodes}
+        k_nodes = [r["k"] for r in records]
+        k_nodes = [models.KNode(node.labels, node.items()) for node in k_nodes]
         self._knowledge_nodes = k_nodes
+        self._knowledge_nodes.sort(key=lambda n: n.kid)
+        return self.knowledge_nodes
 
+    @property
+    def knowledge_relationships(self) -> list[models.KRelationship]:
+        if self._knowledge_relationships is not None:
+            return self._knowledge_relationships
         records = Graph._get_knowledge_relationship(models.GraphBase(self.creator, self.gid)._asdict())
-        k_rels = {r["r"] for r in records}
-        k_rels = {models.KRelationship(rel["label"], {k: v for k, v in rel if k != "label"}) for rel in k_rels}
+        k_rels = [r["r"] for r in records]
+        k_rels = [models.KRelationship(rel.type, rel.items(), rel.start_node, rel.end_node) for rel in k_rels]
         self._knowledge_relationships = k_rels
+        return self.knowledge_relationships
 
-        return self.knowledge
+    def draw_node(self, node: models.KNode):
+        node = copy.deepcopy(node)
+        node.properties["kid"] = len(self.knowledge_nodes)
+        stmt = self._create_knowledge_node
+        stmt = stmt.replace("?", ":".join(node.labels), 1)
+        stmt = stmt.replace("?", ", ".join(f"{k}: ${k}" for k in node.properties))
+        execute(stmt)(self.model_base._asdict() | node.properties)
+        self._knowledge_nodes.append(node)
+
+    def draw_relationship(self, relationship: models.KRelationship):
+        relationship = copy.deepcopy(relationship)
+        rel = {"start_node": relationship.start_node, "end_node": relationship.end_node}
+        stmt = self._create_knowledge_relationship
+        stmt = stmt.replace("?", ":".join(relationship.type), 1)
+        if relationship.properties:
+            stmt = stmt.replace("?", " {?}", 1)
+            stmt = stmt.replace("?", ", ".join(f"{k}: ${k}" for k in relationship.properties))
+        else:
+            stmt = stmt.replace("?", "")
+        execute(stmt)(self.model_base._asdict() | relationship.properties | rel)
+        _ = self.knowledge_relationships
+        self._knowledge_relationships.append(relationship)
 
     def detach(self):
         Graph._detach_knowledge(models.GraphBase(self.creator, self.gid)._asdict())
         Graph._detach(models.GraphBase(self.creator, self.gid)._asdict())
+
+    @staticmethod
+    def draw_graph(graph: models.Graph) -> 'Graph':
+        records = Graph._create(graph._asdict())
+        graph = records[0]["g"]
+        return Graph(
+            models.Graph(graph["creator"], graph["gid"], graph["title"], graph["create_time"], graph["edit_time"]))
