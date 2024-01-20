@@ -11,13 +11,13 @@ Executor = Callable[[dict], list[Record]]
 
 
 # session generator
-def _session_generator() -> Generator:
+def _session_generator(database: str) -> Generator:
     with GraphDatabase.driver(URI, auth=AUTH) as driver:
         while True:
-            yield driver.session(database="neo4j")
+            yield driver.session(database=database)
 
 
-session_generator = _session_generator()
+session_generator = _session_generator("neo4j")
 
 
 # executor

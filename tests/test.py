@@ -1,14 +1,15 @@
+import json
 from datetime import date, datetime
 
 from ogm import *
 
 user_create = models.User(**{
-        "username": "user",
-        "password": "",
-        "telephone": "",
-        "email": "",
-        "profile": "",
-        "create_time": date(2000, 1, 1),
+    "username": "user",
+    "password": "",
+    "telephone": "",
+    "email": "",
+    "profile": "",
+    "create_time": date(2000, 1, 1),
 })
 
 user_get = models.UserBase(username="user")
@@ -25,4 +26,4 @@ query = {
     "answer": "",
     "create_time": datetime(2000, 1, 1, 0, 0, 0, 0), }
 
-print(user_get)
+DATA_PATH = 'test_subset.json'

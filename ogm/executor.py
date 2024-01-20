@@ -1,7 +1,7 @@
 import copy
 from datetime import datetime
 
-import database.tuples as models
+import ogm.tuples as models
 from database.session import execute, Executor
 
 
@@ -28,8 +28,7 @@ class User:
 
     def __init__(self, user: models.UserBase | models.User | None):
         records = User._get(user._asdict()) if user is not None else []
-        if isinstance(user, models.User):
-            assert len(records) == 0, "user already exists"
+        if isinstance(user, models.User) and len(records) == 0:
             records = User._create(user._asdict())
         self._info = records
         self._dialogues = None
@@ -127,16 +126,17 @@ class User:
         self._graphs = [Graph(g) for g in graph_nodes]
         return self.graphs
 
-    def draw_graph(self, title: str, create_time: datetime, edit_time: datetime):
-        graph = models.Graph(self.username, len(self.graphs), title, create_time, edit_time)
+    def draw_graph(self, title: str, create_time: datetime, edit_time: datetime, gid=None):
+        if gid is None:
+            gid = len(self.graphs)
+        graph = models.Graph(self.username, gid, title, create_time, edit_time)
         graph = Graph.draw_graph(graph)
         self._graphs.append(graph)
 
     def detach_graph(self, gid: int):
         graphs = [g for g in self.graphs if g.gid == gid]
-        assert len(graphs) == 1
-        graph = graphs[0]
-        graph.detach()
+        for graph in graphs:
+            graph.detach()
 
     def detach_graphs(self):
         for graph in self.graphs:
@@ -280,16 +280,17 @@ class Graph:
         "creator: $creator, create_time: $create_time, edit_time: $edit_time}) return g")
     """parameters: creator, gid, title, create_time, edit_time"""
 
-    _create_knowledge_node = "MATCH (g:Graph {creator: $creator, gid: $gid}) CREATE (g)-[:CONTAIN]->(k:? {?})"
-    _create_knowledge_relationship = ("MATCH (g:Graph {creator: $creator, gid: $gid})-->(k1 {kid: $start_node}) "
-                                      "MATCH (g)-->(k2 {kid: $end_node}) CREATE (k1)-[:??]->(k2)")
+    _create_knowledge_node_stmt = "MATCH (g:Graph {creator: $creator, gid: $gid}) CREATE (g)-[:CONTAIN]->(k:? {?})"
+    _create_knowledge_relationship_stmt = ("MATCH (g:Graph {creator: $creator, gid: $gid})-->(k1 {kid: $start_node}) "
+                                           "MATCH (g)-->(k2 {kid: $end_node}) CREATE (k1)-[:??]->(k2)")
 
     _detach_knowledge = execute("MATCH (g:Graph {creator: $creator, gid: $gid})-[:CONTAIN]->(k) DETACH DELETE k")
     _detach = execute("MATCH (g:Graph {creator: $creator, gid: $gid}) DETACH DELETE g")
 
-    _get_knowledge_node = execute("MATCH (g:Graph {creator: $creator, gid: $gid})-->(k:KNode) return k")
+    _get_knowledge_node = execute("MATCH (g:Graph {creator: $creator, gid: $gid})-->(k) return k")
+    _get_knowledge_node_by_name_stmt = "MATCH (g:Graph {creator: $creator, gid: $gid})-->(k? {name: $name}) return k"
     _get_knowledge_relationship = execute(
-        "MATCH (g:Graph {creator: $creator, gid: $gid})-->(:KNode)-[r]->(:KNode) return r")
+        "MATCH (g:Graph {creator: $creator, gid: $gid})-->(k1)-[r]->(k2) return k1, k2, r")
 
     def __init__(self, graph: models.Graph | None):
         self._instance = None
@@ -325,20 +326,28 @@ class Graph:
         self._knowledge_nodes.sort(key=lambda n: n.kid)
         return self.knowledge_nodes
 
+    def find_node(self, labels: list[str], name: str) -> models.KNode:
+        stmt = Graph._get_knowledge_node_by_name_stmt
+        stmt = stmt.replace("?", ":" + ":".join(labels) if labels else "")
+        records = execute(stmt)(models.GraphBase(self.creator, self.gid)._asdict() | {"name": name})
+        k_node = [r["k"] for r in records][0]
+        return models.KNode(list(k_node.labels), dict(k_node.items()))
+
     @property
     def knowledge_relationships(self) -> list[models.KRelationship]:
         if self._knowledge_relationships is not None:
             return self._knowledge_relationships
         records = Graph._get_knowledge_relationship(models.GraphBase(self.creator, self.gid)._asdict())
         k_rels = [r["r"] for r in records]
-        k_rels = [models.KRelationship(rel.type, rel.items(), rel.start_node, rel.end_node) for rel in k_rels]
+        k_rels = [models.KRelationship(rel.type, dict(rel.items()), rel.start_node["kid"], rel.end_node["kid"]) for rel
+                  in k_rels]
         self._knowledge_relationships = k_rels
         return self.knowledge_relationships
 
     def draw_node(self, node: models.KNode):
         node = copy.deepcopy(node)
         node.properties["kid"] = len(self.knowledge_nodes)
-        stmt = self._create_knowledge_node
+        stmt = self._create_knowledge_node_stmt
         stmt = stmt.replace("?", ":".join(node.labels), 1)
         stmt = stmt.replace("?", ", ".join(f"{k}: ${k}" for k in node.properties))
         execute(stmt)(self.model_base._asdict() | node.properties)
@@ -347,8 +356,8 @@ class Graph:
     def draw_relationship(self, relationship: models.KRelationship):
         relationship = copy.deepcopy(relationship)
         rel = {"start_node": relationship.start_node, "end_node": relationship.end_node}
-        stmt = self._create_knowledge_relationship
-        stmt = stmt.replace("?", ":".join(relationship.type), 1)
+        stmt = self._create_knowledge_relationship_stmt
+        stmt = stmt.replace("?", relationship.type, 1)
         if relationship.properties:
             stmt = stmt.replace("?", " {?}", 1)
             stmt = stmt.replace("?", ", ".join(f"{k}: ${k}" for k in relationship.properties))
@@ -356,7 +365,6 @@ class Graph:
             stmt = stmt.replace("?", "")
         execute(stmt)(self.model_base._asdict() | relationship.properties | rel)
         _ = self.knowledge_relationships
-        self._knowledge_relationships.append(relationship)
 
     def detach(self):
         Graph._detach_knowledge(models.GraphBase(self.creator, self.gid)._asdict())
