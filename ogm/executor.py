@@ -128,7 +128,7 @@ class User:
         self._dialogues = []
 
     @property
-    def graphs(self):
+    def graphs(self) -> list['Graph']:
         if self._graphs is not None:
             return self._graphs
         records = User._get_graphs(models.UserBase(self.username)._asdict())
@@ -301,6 +301,8 @@ class Graph:
     _create_knowledge_relationship_stmt = ("MATCH (g:Graph {creator: $creator, gid: $gid})-->(k1 {kid: $start_node}) "
                                            "MATCH (g)-->(k2 {kid: $end_node}) CREATE (k1)-[:??]->(k2)")
 
+    _set_edit_time = execute("MATCH (g:Graph {creator: $creator, gid: $gid}) SET g.edit_time = $edit_time RETURN g")
+
     _detach_knowledge = execute("MATCH (g:Graph {creator: $creator, gid: $gid})-[:CONTAIN]->(k) DETACH DELETE k")
     _detach = execute("MATCH (g:Graph {creator: $creator, gid: $gid}) DETACH DELETE g")
 
@@ -318,7 +320,7 @@ class Graph:
             self.gid = graph.gid
             self.title = graph.title
             self.create_time = graph.create_time
-            self.edit_time = graph.edit_time
+            self._edit_time = graph.edit_time
 
     @property
     def model(self):
@@ -327,6 +329,17 @@ class Graph:
     @property
     def model_base(self):
         return models.GraphBase(self.creator, self.gid)
+
+
+    @property
+    def edit_time(self):
+        return self._edit_time
+
+
+    @edit_time.setter
+    def edit_time(self, t: datetime):
+        records = Graph._set_edit_time(self.model_base._asdict() | {"edit_time": t})
+        self._edit_time = t
 
     @property
     def knowledge(self):
@@ -368,6 +381,7 @@ class Graph:
         stmt = stmt.replace("?", ":".join(node.labels), 1)
         stmt = stmt.replace("?", ", ".join(f"{k}: ${k}" for k in node.properties))
         execute(stmt)(self.model_base._asdict() | node.properties)
+        self._edit_time = datetime.now()
         self._knowledge_nodes.append(node)
 
     def draw_relationship(self, relationship: models.KRelationship):
@@ -381,6 +395,7 @@ class Graph:
         else:
             stmt = stmt.replace("?", "")
         execute(stmt)(self.model_base._asdict() | relationship.properties | rel)
+        self._edit_time = datetime.now()
         _ = self.knowledge_relationships
 
     def detach(self):
