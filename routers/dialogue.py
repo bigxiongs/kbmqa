@@ -47,4 +47,3 @@ def detach_dialogue(did: int, current_user: Annotated[User, Depends(get_current_
         current_user.detach_dialogue(did)
     except Exception:
         raise forbidden_exception
-    return None
