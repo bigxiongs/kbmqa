@@ -1,5 +1,6 @@
 import copy
 from datetime import datetime
+from functools import reduce
 
 import ogm.tuples as models
 from database.session import execute, Executor
@@ -297,13 +298,23 @@ class Graph:
         "creator: $creator, create_time: $create_time, edit_time: $edit_time}) return g")
     """parameters: creator, gid, title, create_time, edit_time"""
 
-    _create_knowledge_node_stmt = "MATCH (g:Graph {creator: $creator, gid: $gid}) CREATE (g)-[:CONTAIN]->(k:? {?})"
+    _create_knowledge_node_stmt = "MATCH (g:Graph {creator: $creator, gid: $gid}) CREATE (g)-[:CONTAIN]->(k? {?})"
     _create_knowledge_relationship_stmt = ("MATCH (g:Graph {creator: $creator, gid: $gid})-->(k1 {kid: $start_node}) "
                                            "MATCH (g)-->(k2 {kid: $end_node}) CREATE (k1)-[:??]->(k2)")
 
-    _set_edit_time = execute("MATCH (g:Graph {creator: $creator, gid: $gid}) SET g.edit_time = $edit_time RETURN g")
+    _set_edit_time = execute("MATCH (g:Graph {creator: $creator, gid: $gid}) SET g.edit_time = $edit_time")
+
+    _replace_node_properties_stmt = ("MATCH (g:Graph {creator: $creator, gid: $gid})-[:CONTAIN]->(k? {kid: $kid}) SET "
+                                     "k = {?}")
+    _replace_relationship_properties_stmt = ("MATCH (g:Graph {creator: $creator, gid: $gid})-->(k1 {kid: "
+                                             "$start_node})-[r:?]->(k2 {kid: $end_node}) SET r = {?}")
 
     _detach_knowledge = execute("MATCH (g:Graph {creator: $creator, gid: $gid})-[:CONTAIN]->(k) DETACH DELETE k")
+    _detach_knowledge_node = execute(
+        "MATCH (g:Graph {creator: $creator, gid: $gid})-[:CONTAIN]->(k: {kid: $kid}) DETACH DELETE k")
+    _detach_knowledge_relationship_stmt = ("MATCH (g:Graph {creator: $creator, gid: $gid})-->(k1 {kid: $start_node})"
+                                           "-[r:?]->(k2 {kid: $end_node}) DETACH DELETE r")
+    _detach_knowledge_relationship = lambda t: execute(Graph._detach_knowledge_relationship_stmt.replace("?", t))
     _detach = execute("MATCH (g:Graph {creator: $creator, gid: $gid}) DETACH DELETE g")
 
     _get_knowledge_node = execute("MATCH (g:Graph {creator: $creator, gid: $gid})-->(k) return k")
@@ -330,15 +341,13 @@ class Graph:
     def model_base(self):
         return models.GraphBase(self.creator, self.gid)
 
-
     @property
     def edit_time(self):
         return self._edit_time
 
-
     @edit_time.setter
     def edit_time(self, t: datetime):
-        records = Graph._set_edit_time(self.model_base._asdict() | {"edit_time": t})
+        Graph._set_edit_time(self.model_base._asdict() | {"edit_time": t})
         self._edit_time = t
 
     @property
@@ -363,6 +372,14 @@ class Graph:
         k_node = [r["k"] for r in records][0]
         return models.KNode(list(k_node.labels), dict(k_node.items()))
 
+    def get_node_by_kid(self, kid: int) -> models.KNode | None:
+        return reduce(lambda a, b: b if b.properties.get("kid", None) == kid else a, self.knowledge_nodes, None)
+
+    def get_relationship_by_type(self, k_type: str, start_node: int, end_node: int) -> models.KRelationship | None:
+        return reduce(
+            lambda a, b: b if b.type == k_type and b.start_node == start_node and b.end_node == end_node else a,
+            self.knowledge_relationships, None)
+
     @property
     def knowledge_relationships(self) -> list[models.KRelationship]:
         if self._knowledge_relationships is not None:
@@ -376,9 +393,13 @@ class Graph:
 
     def draw_node(self, node: models.KNode):
         node = copy.deepcopy(node)
-        node.properties["kid"] = len(self.knowledge_nodes)
+        kid = node.properties.get("kid", None)
+        if kid is None:
+            node.properties["kid"] = self.knowledge_nodes[-1].properties["kid"] + 1 if self.knowledge_nodes else 0
+        else:
+            assert self.get_node_by_kid(kid) is None
         stmt = self._create_knowledge_node_stmt
-        stmt = stmt.replace("?", ":".join(node.labels), 1)
+        stmt = stmt.replace("?", reduce(lambda a, b: a + ":" + b, node.labels, ""), 1)
         stmt = stmt.replace("?", ", ".join(f"{k}: ${k}" for k in node.properties))
         execute(stmt)(self.model_base._asdict() | node.properties)
         self._edit_time = datetime.now()
@@ -397,6 +418,39 @@ class Graph:
         execute(stmt)(self.model_base._asdict() | relationship.properties | rel)
         self._edit_time = datetime.now()
         _ = self.knowledge_relationships
+
+    def set_node(self, node: models.KNode):
+        kid = node.properties.get("kid", None)
+        assert kid is not None
+        node_in_db = self.get_node_by_kid(kid)
+        assert node_in_db is not None
+        stmt = Graph._replace_node_properties_stmt
+        stmt = stmt.replace("?", reduce(lambda a, b: a + ":" + b, node.labels, ""), 1)
+        stmt = stmt.replace("?", reduce(lambda a, b: a + f"{b}: ${b}", node.properties.keys(), ""))
+        execute(stmt)(self.model_base._asdict() | node.properties)
+        self._edit_time = datetime.now()
+        self._knowledge_nodes = None
+
+    def set_relationship(self, relationship: models.KRelationship):
+        assert self.get_relationship_by_type(relationship.type,
+                                             relationship.start_node, relationship.end_node) is not None
+        stmt = Graph._replace_relationship_properties_stmt
+        stmt = stmt.replace("?", relationship.type, 1)
+        stmt = stmt.replace("?", reduce(lambda a, b: a + f"{b}: ${b}", relationship.properties.keys(), ""))
+        execute(stmt)(self.model_base._asdict() | relationship.properties)
+        self._edit_time = datetime.now()
+        self._knowledge_relationships = None
+
+    def detach_node(self, kid: int):
+        Graph._detach_knowledge_node(self.model_base._asdict() | {"kid": kid})
+        self._edit_time = datetime.now()
+        self._knowledge_nodes = None
+
+    def detach_relationship(self, k_type: str, start_node: int, end_node: int):
+        Graph._detach_knowledge_relationship(k_type)(
+            self.model_base._asdict() | {"start_node": start_node, "end_node": end_node})
+        self._edit_time = datetime.now()
+        self._knowledge_relationships = None
 
     def detach(self):
         Graph._detach_knowledge(models.GraphBase(self.creator, self.gid)._asdict())
