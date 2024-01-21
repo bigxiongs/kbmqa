@@ -16,6 +16,8 @@ class User:
 
     _set_name: Executor = execute("MATCH (u:User {username: $username}) SET u.username = $new_name RETURN u")
     """parameters: username, new_name"""
+    _set_password = execute("MATCH (u:User {username: $username}) SET u.password = $new_password RETURN u")
+    """parameters: username, new_password"""
 
     _detach: Executor = execute("MATCH (u:User {username: $username}) DETACH DELETE u")
     """parameters: username"""
@@ -30,22 +32,25 @@ class User:
         records = User._get(user._asdict()) if user is not None else []
         if isinstance(user, models.User) and len(records) == 0:
             records = User._create(user._asdict())
-        self._info = records
+        self._instance = records
         self._dialogues = None
         self._graphs = None
 
     @property
-    def _info(self):
-        return self._instance
+    def _instance(self):
+        return self._instance_real
 
-    @_info.setter
-    def _info(self, records):
+    @_instance.setter
+    def _instance(self, records):
         if len(records) == 0:
-            self._instance = None
+            self._instance_real = None
         elif len(records) == 1:
-            self._instance = records[0]["u"]
+            self._instance_real = records[0]["u"]
         else:
             assert False
+
+    def exists(self):
+        return self._instance is not None
 
     @property
     def model(self) -> models.User | None:
@@ -60,33 +65,39 @@ class User:
 
     @property
     def username(self):
-        return self._info["username"]
+        assert self._instance is not None
+        return self._instance["username"]
 
     @username.setter
     def username(self, new_name: str):
         assert not User._get(models.UserBase(new_name)._asdict())
         records = User._set_name({"username": self.username, "new_name": new_name})
-        self._info = records
+        self._instance = records
 
     @property
     def password(self):
-        return self._info["password"]
+        return self._instance["password"]
+
+    @password.setter
+    def password(self, new_password):
+        records = User._set_password({"username": self.username, "new_password": new_password})
+        self._instance = records
 
     @property
     def email(self):
-        return self._info["email"]
+        return self._instance["email"]
 
     @property
     def telephone(self):
-        return self._info["telephone"]
+        return self._instance["telephone"]
 
     @property
     def profile(self):
-        return self._info["profile"]
+        return self._instance["profile"]
 
     @property
     def create_time(self):
-        return self._info["create_time"].to_native()
+        return self._instance["create_time"].to_native()
 
     @property
     def dialogues(self) -> list['Dialogue']:
@@ -96,6 +107,7 @@ class User:
         dialogue_nodes = [r["d"] for r in records]
         dialogue_nodes = [models.Dialogue(d["creator"], d["did"], d["title"]) for d in dialogue_nodes]
         self._dialogues = [Dialogue(d) for d in dialogue_nodes]
+        self._dialogues.sort(key=lambda d: d.did)
         return self.dialogues
 
     def open_dialogue(self, title: str):
@@ -124,6 +136,7 @@ class User:
         graph_nodes = [models.Graph(g["creator"], g["gid"], g["title"], g["create_time"], g["edit_time"]) for g in
                        graph_nodes]
         self._graphs = [Graph(g) for g in graph_nodes]
+        self._graphs.sort(key=lambda g: g.gid)
         return self.graphs
 
     def draw_graph(self, title: str, create_time: datetime, edit_time: datetime, gid=None):
@@ -144,12 +157,13 @@ class User:
         self._graphs = []
 
     def detach(self):
-        if self._info is not None:
-            self.detach_dialogues()
-            self.detach_graphs()
-            User._detach(models.UserBase(self.username)._asdict())
-            return User(models.UserBase(self.username))
-        assert False
+        assert self._instance is not None
+        self.detach_dialogues()
+        self.detach_graphs()
+        User._detach(models.UserBase(self.username)._asdict())
+        self._instance = None
+        self._dialogues = None
+        self._graphs = None
 
     def __eq__(self, __o):
         if __o is not User:
@@ -188,7 +202,7 @@ class Dialogue:
             self._title = dialogue.title
 
     @property
-    def model(self):
+    def model(self) -> models.Dialogue:
         return models.Dialogue(self.creator, self.did, self.title)
 
     @property
@@ -216,6 +230,7 @@ class Dialogue:
         queries = [r["q"] for r in records]
         queries = [models.Query(q["question"], q["answer"], q["create_time"]) for q in queries]
         self._history = [Query(q) for q in queries]
+        self._history.sort(key=lambda h: h.create_time)
         return self.history
 
     def detach(self):
@@ -228,9 +243,11 @@ class Dialogue:
         dialogue = records[0]["d"]
         return Dialogue(models.Dialogue(dialogue["creator"], dialogue["did"], dialogue["title"]))
 
-    def continue_dialogue(self, query: models.Query):
+    def continue_dialogue(self, question: str, answer: str):
+        query = models.Query(question, answer, datetime.now())
         Dialogue._create_query(self.model._asdict() | query._asdict())
         self._history = None
+        return self.history[-1]
 
     def __eq__(self, __o):
         if __o is not Dialogue:
@@ -262,7 +279,7 @@ class Query:
             self.create_time = query.create_time
 
     @property
-    def model(self):
+    def model(self) -> models.Query:
         return models.Query(self.question, self.answer, self.create_time)
 
     def __eq__(self, __o):
@@ -292,7 +309,7 @@ class Graph:
     _get_knowledge_relationship = execute(
         "MATCH (g:Graph {creator: $creator, gid: $gid})-->(k1)-[r]->(k2) return k1, k2, r")
 
-    def __init__(self, graph: models.Graph | None):
+    def __init__(self, graph: models.Graph):
         self._instance = None
         self._knowledge_nodes = None
         self._knowledge_relationships = None
