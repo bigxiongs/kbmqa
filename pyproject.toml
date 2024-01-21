@@ -1,18 +1,25 @@
 [tool.poetry]
-name = "kbmqa"
+name = "main"
 version = "0.1.0"
 description = ""
 authors = ["xiong-deshan <deshan-xiong@outlook.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.10"
-fastapi = "^0.104.1"
-uvicorn = "^0.24.0.post1"
+python = "^3.8"
 neo4j = "^5.15.0"
-functoolz = "^0.4"
+passlib = "^1.7.4"
+pyjwt = "^2.8.0"
+fastapi = "^0.109.0"
+uvicorn = "^0.26.0"
+python-jose = "^3.3.0"
+python-multipart = "^0.0.6"
+bcrypt = "^4.1.2"
 
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+dev = "main:main"
