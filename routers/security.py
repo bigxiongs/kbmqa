@@ -1,12 +1,12 @@
 from datetime import timedelta, datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from passlib.context import CryptContext
 from jose import JWTError, jwt
 
-from ogm import User, models
+from ogm import *
 
 SECRET_KEY = "1626204a656f593083bd1de20b7eab415217243a89ee4c06be0fd74ec8f49a6c"
 ALGORITHM = "HS256"
@@ -94,3 +94,18 @@ def create_user(username: str, password: str, telephone: str = "", email: str = 
     if User(user).exists():
         return User(models.UserBase(username))
     raise service_unavailable_exception
+
+
+def get_current_graph(gid: int, current_user: Annotated[User, Depends(get_current_user)]):
+    try:
+        return current_user.graphs[gid]
+    except Exception:
+        raise forbidden_exception
+
+
+def create_node(labels: list[str], properties: dict[str, Any]):
+    return models.KNode(labels, properties)
+
+
+def create_edge(k_type: str, properties: dict[str, Any], start_node: int, end_node: int):
+    return models.KRelationship(k_type, properties, start_node, end_node)
