@@ -6,6 +6,7 @@ from routers import *
 app = FastAPI()
 app.include_router(token.router)
 app.include_router(dialogue.router)
+app.include_router(graph.router)
 
 
 @app.get("/")

@@ -96,11 +96,18 @@ def create_user(username: str, password: str, telephone: str = "", email: str = 
     raise service_unavailable_exception
 
 
-def get_current_graph(gid: int, current_user: Annotated[User, Depends(get_current_user)]):
-    try:
-        return current_user.graphs[gid]
-    except Exception:
+def get_current_dialogue(did: int, current_user: Annotated[User, Depends(get_current_user)]):
+    dialogue = current_user.get_dialogue(did)
+    if dialogue is None:
         raise forbidden_exception
+    return dialogue
+
+
+def get_current_graph(gid: int, current_user: Annotated[User, Depends(get_current_user)]):
+    graph = current_user.get_graph(gid)
+    if graph is None:
+        raise forbidden_exception
+    return graph
 
 
 def create_node(labels: list[str], properties: dict[str, Any]):

@@ -7,7 +7,7 @@ router = APIRouter(prefix="/graph", tags=["graph"])
 
 @router.get("/all")
 def get_graphs(current_user: Annotated[User, Depends(get_current_user)]):
-    return [get_graph(i, current_user) for i in range(len(current_user.graphs))]
+    return [get_graph(g) for g in current_user.graphs]
 
 
 @router.get("/")
@@ -22,7 +22,7 @@ def get_graph(graph: Annotated[Graph, Depends(get_current_graph)]):
 @router.post("/")
 def draw_graph(current_user: Annotated[User, Depends(get_current_user)]):
     current_user.draw_graph("", datetime.now(), datetime.now())
-    return get_graph(-1, current_user)
+    return get_graph(current_user.graphs[-1])
 
 
 @router.delete("/")
@@ -43,7 +43,7 @@ def draw_k_node(node: Annotated[models.KNode, Depends(create_node)],
 
 
 @router.post("/edge")
-def draw_k_rel(edge: Annotated[models.KRelationship, Depends(create_edge)],
+def draw_k_edge(edge: Annotated[models.KRelationship, Depends(create_edge)],
                graph: Annotated[Graph, Depends(get_current_graph)]):
     try:
         graph.draw_relationship(edge)

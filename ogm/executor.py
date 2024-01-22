@@ -111,6 +111,9 @@ class User:
         self._dialogues.sort(key=lambda d: d.did)
         return self.dialogues
 
+    def get_dialogue(self, did: int):
+        return reduce(lambda a, b: b if b.did == did else a, self.dialogues, None)
+
     def open_dialogue(self, title: str):
         dialogue = models.Dialogue(self.username, len(self.dialogues), title)
         dialogue = Dialogue.open_dialogue(dialogue)
@@ -139,6 +142,9 @@ class User:
         self._graphs = [Graph(g) for g in graph_nodes]
         self._graphs.sort(key=lambda g: g.gid)
         return self.graphs
+
+    def get_graph(self, gid: int):
+        return reduce(lambda a, b: b if b.gid == gid else a, self.graphs, None)
 
     def draw_graph(self, title: str, create_time: datetime, edit_time: datetime, gid=None):
         if gid is None:
@@ -311,7 +317,7 @@ class Graph:
 
     _detach_knowledge = execute("MATCH (g:Graph {creator: $creator, gid: $gid})-[:CONTAIN]->(k) DETACH DELETE k")
     _detach_knowledge_node = execute(
-        "MATCH (g:Graph {creator: $creator, gid: $gid})-[:CONTAIN]->(k: {kid: $kid}) DETACH DELETE k")
+        "MATCH (g:Graph {creator: $creator, gid: $gid})-[:CONTAIN]->(k {kid: $kid}) DETACH DELETE k")
     _detach_knowledge_relationship_stmt = ("MATCH (g:Graph {creator: $creator, gid: $gid})-->(k1 {kid: $start_node})"
                                            "-[r:?]->(k2 {kid: $end_node}) DETACH DELETE r")
     _detach_knowledge_relationship = lambda t: execute(Graph._detach_knowledge_relationship_stmt.replace("?", t))
@@ -360,9 +366,9 @@ class Graph:
             return self._knowledge_nodes
         records = Graph._get_knowledge_node(models.GraphBase(self.creator, self.gid)._asdict())
         k_nodes = [r["k"] for r in records]
-        k_nodes = [models.KNode(node.labels, node.items()) for node in k_nodes]
+        k_nodes = [models.KNode(node.labels, dict(node.items())) for node in k_nodes]
         self._knowledge_nodes = k_nodes
-        self._knowledge_nodes.sort(key=lambda n: n.kid)
+        self._knowledge_nodes.sort(key=lambda n: n.properties["kid"])
         return self.knowledge_nodes
 
     def find_node(self, labels: list[str], name: str) -> models.KNode:
@@ -426,7 +432,7 @@ class Graph:
         assert node_in_db is not None
         stmt = Graph._replace_node_properties_stmt
         stmt = stmt.replace("?", reduce(lambda a, b: a + ":" + b, node.labels, ""), 1)
-        stmt = stmt.replace("?", reduce(lambda a, b: a + f"{b}: ${b}", node.properties.keys(), ""))
+        stmt = stmt.replace("?", ", ".join(f"{k}: ${k}" for k in node.properties.keys()))
         execute(stmt)(self.model_base._asdict() | node.properties)
         self._edit_time = datetime.now()
         self._knowledge_nodes = None
@@ -436,8 +442,8 @@ class Graph:
                                              relationship.start_node, relationship.end_node) is not None
         stmt = Graph._replace_relationship_properties_stmt
         stmt = stmt.replace("?", relationship.type, 1)
-        stmt = stmt.replace("?", reduce(lambda a, b: a + f"{b}: ${b}", relationship.properties.keys(), ""))
-        execute(stmt)(self.model_base._asdict() | relationship.properties)
+        stmt = stmt.replace("?", ", ".join(f"{k}: ${k}" for k in relationship.properties.keys()))
+        execute(stmt)(self.model_base._asdict() | relationship.properties | {"start_node": relationship.start_node, "end_node": relationship.end_node})
         self._edit_time = datetime.now()
         self._knowledge_relationships = None
 
