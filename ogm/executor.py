@@ -29,7 +29,7 @@ class User:
     _get_graphs: Executor = execute("MATCH (:User {username: $username})-->(g:Graph) RETURN g")
     """parameters: username"""
 
-    def __init__(self, user: models.UserBase | models.User | None):
+    def __init__(self, user: models.UserBase | models.User):
         records = User._get(user._asdict()) if user is not None else []
         if isinstance(user, models.User) and len(records) == 0:
             records = User._create(user._asdict())
@@ -279,7 +279,7 @@ class Dialogue:
         dialogue = records[0]["d"]
         return Dialogue(models.Dialogue(dialogue["creator"], dialogue["did"], dialogue["title"]))
 
-    def continue_dialogue(self, question: str, answer: str, nodes, relationships):
+    def continue_dialogue(self, question: str, answer: str):
         query = models.Query(question, answer, datetime.now())
         Dialogue._create_query(self.model._asdict() | query._asdict())
         self._history = None
