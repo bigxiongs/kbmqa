@@ -1,29 +1,26 @@
 import json
-from datetime import date, datetime
 
-from ogm import *
+import requests
 
-user_create = models.User(**{
-    "username": "user",
-    "password": "",
-    "telephone": "",
-    "email": "",
-    "profile": "",
-    "create_time": date(2000, 1, 1),
-})
-
-user_get = models.UserBase(username="user")
-
-dialogue = {
-    "type": "Node",
-    "creator": "user",
-    "did": "1",
-    "title": "", }
-
-query = {
-    "type": "Node",
-    "question": "",
-    "answer": "",
-    "create_time": datetime(2000, 1, 1, 0, 0, 0, 0), }
-
-DATA_PATH = 'test_subset.json'
+FASTGPT_API = "fastgpt-JgHWU7xd6DHsLxQ3badljRB3eSFMm"
+BASE_URL = "https://api.fastgpt.in/api/v1/chat/completions"
+headers = {
+    "Authorization": f"Bearer {FASTGPT_API}",
+    "Content-Type": "application/json"
+}
+payload = {
+    "stream": False,
+    "detail": False,
+    "variables": {
+        "uid": "",
+        "name": ""
+    },
+    "messages": [
+        {
+            "content": "歼-16战机有几个发动机",
+            "role": "user"
+        }
+    ]
+}
+response = requests.post(BASE_URL, json=payload, headers=headers)
+print(json.loads(response.text)["choices"][0]["message"]["content"])

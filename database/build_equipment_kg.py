@@ -1,8 +1,10 @@
 import copy
 import json
 from datetime import datetime
+from functools import reduce
 
-from ogm import User, models
+from ogm import User, Graph, models
+from ogm.equipment_kg import EquipmentGraph
 
 DATA_PATH = "military.json"
 CREATOR = "admin"
@@ -15,6 +17,8 @@ CATEGORY_SMALL = "类型"
 NAME_LABEL = "name"
 EQUIPMENT_LABEL = "Equipment"
 ADMIN = User(models.User(CREATOR, "", "", "", "", datetime.now()))
+GRAPH = EquipmentGraph(ADMIN.get_graph(GID).model)
+PUNCTUATION = '＂＃＄％＆＇（）＊＋，／：；＜＝＞＠［＼］＾＿｀｛｜｝～｟｠｢｣､\u3000、〃〈〉《》「」『』【】〔〕〖〗〘〙〚〛〜〝〞〟〰〾〿‘’‛“”„‟…‧﹏﹑﹔·！？｡。!"#$%&\'()*+,./:;<=>?@[\\]^_`{|}~'
 
 
 def initialize_kg():
@@ -23,7 +27,7 @@ def initialize_kg():
         ADMIN.draw_graph("Equipment Knowledge Graph", datetime.now(), datetime.now(), GID)
     except AssertionError:
         ...
-    return [g for g in ADMIN.graphs if g.gid == GID][0]
+    return ADMIN.get_graph(GID)
 
 
 def load_data():
@@ -83,7 +87,7 @@ def create_category_relationships(graph, dataset):
 def create_equipment_nodes(graph, dataset):
     def _reduce_equipment(equipment: dict):
         equipment = copy.deepcopy(equipment)
-        equipment[NAME_LABEL] = equipment["名称"]
+        equipment[NAME_LABEL] = reduce(lambda a, b: a.replace(b, ""), PUNCTUATION, equipment["名称"])
         equipment["_id"] = equipment["_id"]["oid"]
         for label in (COUNTRY_LABEL, MANUFACTURER_LABEL, RESEARCH_LABEL, CATEGORY_LARGE, CATEGORY_SMALL, "名称"):
             equipment.pop(label, None)
@@ -104,7 +108,7 @@ def create_equipment_relationships(graph, dataset):
     def _r(label_in_db, label_in_json):
         return [(graph.find_node([EQUIPMENT_LABEL], rel[0]).properties["kid"],
                  graph.find_node([label_in_db], rel[1]).properties["kid"]) for rel in
-                map(lambda e: (e.get("名称"), e.get(label_in_json, None)), dataset) if rel[1] is not None]
+                map(lambda e: (reduce(lambda a, b: a.replace(b, ""), PUNCTUATION, e.get("名称")), e.get(label_in_json, None)), dataset) if rel[1] is not None]
 
     country_r = _r("COUNTRY", COUNTRY_LABEL)
     manufacturer_r = _r("MANUFACTURER", MANUFACTURER_LABEL)
@@ -132,6 +136,7 @@ def create_equipment_relationships(graph, dataset):
 
 def initialize_equipment_kg():
     graph = initialize_kg()
+    assert graph is not None
     dataset = load_data()
     create_countries_manufacturers_researches_nodes(graph, dataset)
     create_category_nodes(graph, dataset)

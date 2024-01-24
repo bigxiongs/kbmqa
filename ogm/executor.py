@@ -184,12 +184,13 @@ class User:
 class Dialogue:
     _create: Executor = execute(
         "MATCH (u:User {username: $creator}) "
-        "CREATE (u)-[:OPEN]->(d:Dialogue {creator: $creator, did: $did, title: $title}) return d")
-    """parameters: creator, did, title"""
+        "CREATE (u)-[:OPEN]->(d:Dialogue {creator: $creator, did: $did, title: $title})-[:ATTACH]->(g:Graph {gid: "
+        "$did, title: $title, creator: $creator, create_time: $create_time, edit_time: $edit_time}) return d")
+    """parameters: creator, did, title, create_time, edit_time"""
 
-    _get_history: Executor = execute(
-        "MATCH (d:Dialogue {creator: $creator, did: $did})-->(q:Query) return q")
+    _get_history = execute("MATCH (d:Dialogue {creator: $creator, did: $did})-->(q:Query) return q")
     """parameters: creator, did"""
+    _get_graph = execute("MATCH (d:Dialogue {creator: $creator, did: $did})-->(g:Graph) return g")
 
     _set_title = execute("MATCH (d:Dialogue {creator: $creator, did: $did}) SET d.title = $title RETURN d")
 
@@ -197,12 +198,20 @@ class Dialogue:
         "MATCH (d:Dialogue {creator: $creator, did: $did}) "
         "CREATE (d)-[:CONTAIN]->(q:Query {question: $question, answer: $answer, create_time: $create_time})")
 
+    _get_knowledge_node = execute("MATCH (d:Dialogue {creator: $creator, did: $did})-->(k) return k")
+    _get_knowledge_relationship = execute(
+        "MATCH (d:Dialogue {creator: $creator, did: $did})-->(k1)-[r]->(k2) return k1, k2, r")
+    _create_knowledge_node_stmt = "MATCH (d:Dialogue {creator: $creator, did: $did}) CREATE (d)-[:CONTAIN]->(k? {?})"
+    _create_knowledge_relationship_stmt = ("MATCH (d:Dialogue {creator: $creator, did: $did})-->(k1 {kid: $start_node})"
+                                           " MATCH (d)-->(k2 {kid: $end_node}) CREATE (k1)-[:??]->(k2)")
+
     _detach_queries: Executor = execute("MATCH (d:Dialogue {creator: $creator, did: $did})-->(q:Query) DETACH DELETE q")
     _detach: Executor = execute("MATCH (d:Dialogue {creator: $creator, did: $did}) DETACH DELETE d")
 
     def __init__(self, dialogue: models.Dialogue):
         self._instance = None
         self._history = None
+        self._graph = None
         if dialogue is not None:
             self._creator = dialogue.creator
             self._did = dialogue.did
@@ -211,6 +220,10 @@ class Dialogue:
     @property
     def model(self) -> models.Dialogue:
         return models.Dialogue(self.creator, self.did, self.title)
+
+    @property
+    def model_base(self) -> models.DialogueBase:
+        return models.DialogueBase(self.creator, self.did)
 
     @property
     def creator(self):
@@ -233,12 +246,28 @@ class Dialogue:
     def history(self) -> list['Query']:
         if self._history is not None:
             return self._history
-        records = Dialogue._get_history(models.DialogueBase(self.creator, self.did)._asdict())
+        records = Dialogue._get_history(self.model_base._asdict())
         queries = [r["q"] for r in records]
         queries = [models.Query(q["question"], q["answer"], q["create_time"]) for q in queries]
         self._history = [Query(q) for q in queries]
         self._history.sort(key=lambda h: h.create_time)
         return self.history
+
+    @property
+    def graph(self) -> 'Graph':
+        if self._graph is not None:
+            return self._graph
+        records = Dialogue._get_graph(self.model_base._asdict())
+        assert len(records) == 1
+        graph = [r["g"] for r in records][0]
+        return Graph(models.Graph(graph["creator"], graph["gid"], graph["title"],
+                                  graph["create_time"], graph["edit_time"]))
+
+    def draw_node(self, node: models.KNode):
+        self.graph.draw_node(node)
+
+    def draw_relationship(self, relationship: models.KRelationship):
+        self.graph.draw_relationship(relationship)
 
     def detach(self):
         Dialogue._detach_queries(models.DialogueBase(self.creator, self.did)._asdict())
@@ -246,11 +275,11 @@ class Dialogue:
 
     @staticmethod
     def open_dialogue(dialogue: models.Dialogue) -> 'Dialogue':
-        records = Dialogue._create(dialogue._asdict())
+        records = Dialogue._create(dialogue._asdict() | {"create_time": datetime.now(), "edit_time": datetime.now()})
         dialogue = records[0]["d"]
         return Dialogue(models.Dialogue(dialogue["creator"], dialogue["did"], dialogue["title"]))
 
-    def continue_dialogue(self, question: str, answer: str):
+    def continue_dialogue(self, question: str, answer: str, nodes, relationships):
         query = models.Query(question, answer, datetime.now())
         Dialogue._create_query(self.model._asdict() | query._asdict())
         self._history = None
@@ -443,7 +472,8 @@ class Graph:
         stmt = Graph._replace_relationship_properties_stmt
         stmt = stmt.replace("?", relationship.type, 1)
         stmt = stmt.replace("?", ", ".join(f"{k}: ${k}" for k in relationship.properties.keys()))
-        execute(stmt)(self.model_base._asdict() | relationship.properties | {"start_node": relationship.start_node, "end_node": relationship.end_node})
+        execute(stmt)(self.model_base._asdict() | relationship.properties | {"start_node": relationship.start_node,
+                                                                             "end_node": relationship.end_node})
         self._edit_time = datetime.now()
         self._knowledge_relationships = None
 
