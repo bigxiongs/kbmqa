@@ -3,7 +3,7 @@ import json
 from datetime import datetime
 from functools import reduce
 
-from ogm import User, Graph, models
+from ogm import User, models
 from ogm.equipment_kg import EquipmentGraph
 
 DATA_PATH = "military.json"

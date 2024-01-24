@@ -1,1 +1,2 @@
 from database.session import session_generator
+from database.build_equipment_kg import initialize_equipment_kg

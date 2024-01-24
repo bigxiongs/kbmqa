@@ -7,7 +7,7 @@ import requests
 from database.build_equipment_kg import GRAPH
 
 DATA_PATH = "./searching/equipment_keywords.json"
-FASTGPT_API = "fastgpt-JgHWU7xd6DHsLxQ3badljRB3eSFMm"
+FASTGPT_API = "fastgpt-Vg1WnaXIyW7RpTneyqp0ITYbC"
 BASE_URL = "https://api.fastgpt.in/api/v1/chat/completions"
 HEADERS = {
     "Authorization": f"Bearer {FASTGPT_API}",
@@ -18,7 +18,7 @@ with open(DATA_PATH, encoding='utf-8') as f:
     EQUIPMENT_KEYWORDS = json.loads(f.read())
 
 
-def payload(question):
+def payload(question) -> dict:
     return {
         "stream": False,
         "detail": False,
@@ -55,6 +55,9 @@ def search(_question: str):
     return _answer, related_nodes, related_edges
 
 
-def answer(question: str):
+def answer(question: str) -> str:
     response = requests.post(BASE_URL, json=payload(question), headers=HEADERS)
-    return json.loads(response.text)["choices"][0]["message"]["content"]
+    try:
+        return json.loads(response.text)["choices"][0]["message"]["content"]
+    except Exception:
+        return ""

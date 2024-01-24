@@ -25,3 +25,4 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
 dev = "main:main"
+build-equipment-kg = "database:initialize_equipment_kg"
