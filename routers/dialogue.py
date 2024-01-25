@@ -33,7 +33,7 @@ def continue_dialogue(question: str, dialogue: Annotated[Dialogue, Depends(get_c
     if not dialogue.history:
         dialogue.title = question
     answer, nodes, edges = search(question)
-    query = dialogue.continue_dialogue(question, answer, nodes, edges)
+    query = dialogue.continue_dialogue(question, answer)
     for node in nodes:
         if dialogue.graph.get_node_by_kid(node.properties["kid"]) is None:
             dialogue.graph.draw_node(node)

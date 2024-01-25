@@ -4,7 +4,7 @@ from functools import reduce
 from rapidfuzz import fuzz
 import requests
 
-from database.build_equipment_kg import GRAPH
+from kg.build_equipment_kg import GRAPH
 
 DATA_PATH = "./searching/equipment_keywords.json"
 FASTGPT_API = "fastgpt-Vg1WnaXIyW7RpTneyqp0ITYbC"

@@ -88,8 +88,8 @@ def create_equipment_nodes(graph, dataset):
     def _reduce_equipment(equipment: dict):
         equipment = copy.deepcopy(equipment)
         equipment[NAME_LABEL] = reduce(lambda a, b: a.replace(b, ""), PUNCTUATION, equipment["名称"])
-        equipment["_id"] = equipment["_id"]["oid"]
-        for label in (COUNTRY_LABEL, MANUFACTURER_LABEL, RESEARCH_LABEL, CATEGORY_LARGE, CATEGORY_SMALL, "名称"):
+        # equipment["_id"] = equipment["_id"]["oid"]
+        for label in (COUNTRY_LABEL, MANUFACTURER_LABEL, RESEARCH_LABEL, CATEGORY_LARGE, CATEGORY_SMALL, "名称", "_id"):
             equipment.pop(label, None)
         return equipment
 
